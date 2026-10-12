@@ -60,7 +60,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible { outline:3px so
   --card-ink:#1c351b;
   --card-font:"American Typewriter","Courier New",monospace;
   background-color:#d4d4d1;
-  background-image:url("./assets/layouts/pip-caller-clean.webp");
+  /* Set from card-render.ts so the rule and the canvas exporter share one copy
+     of the inlined artwork in the single-file build. */
+  background-image:var(--pip-caller-art,none);
   background-position:center;
   background-repeat:no-repeat;
   background-size:cover;

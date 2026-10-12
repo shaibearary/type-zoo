@@ -2,6 +2,7 @@ import {
   OUTBOX_DOMAIN,
   STORAGE_DOMAIN,
   THEME_DOMAIN,
+  UPLOAD_DOMAIN,
   outbox,
   storage,
   themeGet,
@@ -9,6 +10,8 @@ import {
   type Subscription,
   type Theme,
 } from '@napplet/sdk';
+import { cardAltText, installCardArtwork, renderCardImage } from './card-render.js';
+import { buildImetaTag, uploadCardImage } from './card-upload.js';
 import { runtimeHasDomain } from './domain-availability.js';
 import { CARD_FORMATS, getCardFormat, type FormatId } from './formats.js';
 import { createPublicationTracker } from './publish-session.js';
@@ -87,6 +90,14 @@ function showToast(message: string, tone: 'ok' | 'error' = 'ok'): void {
   toastTimer = window.setTimeout(() => elements.status.classList.remove('is-visible'), 1800);
 }
 
+/** Hold a step message up for as long as the step runs; the next toast clears it. */
+function showProgress(message: string): void {
+  window.clearTimeout(toastTimer);
+  elements.status.textContent = message;
+  elements.status.dataset.tone = 'ok';
+  elements.status.classList.add('is-visible');
+}
+
 function switchView(view: ViewName): void {
   elements.homeView.hidden = view !== 'home';
   elements.editorView.hidden = view !== 'editor';
@@ -159,7 +170,9 @@ function applyDraft(): void {
   elements.formatIcon.textContent = format.icon;
   elements.formatName.textContent = format.name;
   elements.characterCount.textContent = String(draft.body.length);
-  elements.publishButton.hidden = !runtimeHasDomain(OUTBOX_DOMAIN);
+  // Posting now needs both rails: the shell uploads the card image, then
+  // publishes the note that points at it.
+  elements.publishButton.hidden = !runtimeHasDomain(OUTBOX_DOMAIN) || !runtimeHasDomain(UPLOAD_DOMAIN);
 }
 
 function syncDraft(): void {
@@ -231,35 +244,54 @@ async function publishCard(): Promise<void> {
     showToast('Nostr publishing is unavailable', 'error');
     return;
   }
+  if (!runtimeHasDomain(UPLOAD_DOMAIN)) {
+    showToast('Image upload is unavailable', 'error');
+    return;
+  }
   const postFingerprint = fingerprint(draft);
   if (publicationTracker.has(postFingerprint) && !await confirmDuplicatePost()) {
     showToast('Post cancelled');
     return;
   }
-  const content = [draft.title.trim(), draft.body.trim()].filter(Boolean).join('\n\n');
   isPublishing = true;
   elements.publishButton.disabled = true;
   try {
-    const result = await outbox.publish(
-      {
-        kind: 1,
-        content,
-        tags: [['t', 'type-zoo'], ['type-zoo-format', draft.formatId]],
-        created_at: Math.floor(Date.now() / 1000),
-      },
-      {
-        // The shell still validates and owns fanout. These candidates keep a
-        // first-time account usable before it has published a NIP-65 relay list.
-        relays: [...PUBLISH_FALLBACK_RELAYS],
-        toOutbox: true,
-      },
-    );
+    // The post is the card itself: draw the background art and the typed words
+    // into one PNG, hand it to the shell's upload rail, then publish a note
+    // whose content is the stored image URL.
+    showProgress('Drawing the card');
+    const snapshot = { ...draft };
+    const card = await renderCardImage(snapshot);
+    const alt = cardAltText(snapshot);
+    showProgress('Uploading the image');
+    const uploaded = await uploadCardImage(card, snapshot, alt);
+    if (!uploaded.ok || !uploaded.url) {
+      showToast(uploaded.error ?? 'Image upload failed', 'error');
+      return;
+    }
+    const template = {
+      kind: 1,
+      content: uploaded.url,
+      tags: [
+        buildImetaTag(uploaded, card, alt),
+        ['t', 'type-zoo'],
+        ['type-zoo-format', snapshot.formatId],
+      ],
+      created_at: Math.floor(Date.now() / 1000),
+    };
+    const result = await outbox.publish(template, {
+      // Explicit first-use destinations let the shell publish before the account
+      // has a NIP-65 relay list. Once configured, normal shell routing still owns
+      // signing, validation, and relay fanout.
+      relays: [...PUBLISH_FALLBACK_RELAYS],
+      toOutbox: false,
+    });
     if (!result.ok) {
       showToast(result.error ?? 'Publish failed', 'error');
       return;
     }
     publicationTracker.record(postFingerprint);
-    showToast('Posted to Nostr');
+    showToast('Posted the card image');
   } finally {
     isPublishing = false;
     elements.publishButton.disabled = false;
@@ -360,6 +392,7 @@ function bindEvents(): void {
 }
 
 async function start(): Promise<void> {
+  installCardArtwork();
   bindEvents();
   if (runtimeHasDomain(THEME_DOMAIN)) {
     try { themeGet().then(applyTheme).catch(() => undefined); themeSubscription = themeOnChanged(applyTheme); } catch { themeSubscription = null; }
