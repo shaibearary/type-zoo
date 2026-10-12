@@ -11,6 +11,7 @@ import {
 } from '@napplet/sdk';
 import { runtimeHasDomain } from './domain-availability.js';
 import { CARD_FORMATS, getCardFormat, type FormatId } from './formats.js';
+import { createPublicationTracker } from './publish-session.js';
 import './styles.css';
 
 type Draft = { title: string; body: string; date: string; formatId: FormatId };
@@ -46,6 +47,7 @@ const elements = {
   searchInput: requireElement<HTMLInputElement>('#searchInput'),
   boxesGrid: requireElement<HTMLElement>('#boxesGrid'),
   emptyBoxes: requireElement<HTMLElement>('#emptyBoxes'),
+  duplicatePostDialog: requireElement<HTMLDialogElement>('#duplicatePostDialog'),
 };
 
 let draft = blankDraft();
@@ -56,6 +58,8 @@ let lastSavedFingerprint: string | null = null;
 let draftTimer = 0;
 let toastTimer = 0;
 let themeSubscription: Subscription | null = null;
+let isPublishing = false;
+const publicationTracker = createPublicationTracker();
 
 function requireElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -68,7 +72,7 @@ function dateKey(date: Date): string {
 }
 
 function blankDraft(): Draft {
-  return { title: '', body: '', date: dateKey(new Date()), formatId: 'mallow-note' };
+  return { title: '', body: '', date: dateKey(new Date()), formatId: 'pip-caller' };
 }
 
 function fingerprint(value: Draft): string {
@@ -217,6 +221,7 @@ async function saveCard(): Promise<void> {
 }
 
 async function publishCard(): Promise<void> {
+  if (isPublishing) return;
   syncDraft();
   if (!draft.title.trim() && !draft.body.trim()) {
     showToast('Write something first', 'error');
@@ -226,26 +231,49 @@ async function publishCard(): Promise<void> {
     showToast('Nostr publishing is unavailable', 'error');
     return;
   }
-  const content = [draft.title.trim(), draft.body.trim()].filter(Boolean).join('\n\n');
-  const result = await outbox.publish(
-    {
-      kind: 1,
-      content,
-      tags: [['t', 'type-zoo'], ['type-zoo-format', draft.formatId]],
-      created_at: Math.floor(Date.now() / 1000),
-    },
-    {
-      // The shell still validates and owns fanout. These candidates keep a
-      // first-time account usable before it has published a NIP-65 relay list.
-      relays: [...PUBLISH_FALLBACK_RELAYS],
-      toOutbox: true,
-    },
-  );
-  if (!result.ok) {
-    showToast(result.error ?? 'Publish failed', 'error');
+  const postFingerprint = fingerprint(draft);
+  if (publicationTracker.has(postFingerprint) && !await confirmDuplicatePost()) {
+    showToast('Post cancelled');
     return;
   }
-  showToast('Posted to Nostr');
+  const content = [draft.title.trim(), draft.body.trim()].filter(Boolean).join('\n\n');
+  isPublishing = true;
+  elements.publishButton.disabled = true;
+  try {
+    const result = await outbox.publish(
+      {
+        kind: 1,
+        content,
+        tags: [['t', 'type-zoo'], ['type-zoo-format', draft.formatId]],
+        created_at: Math.floor(Date.now() / 1000),
+      },
+      {
+        // The shell still validates and owns fanout. These candidates keep a
+        // first-time account usable before it has published a NIP-65 relay list.
+        relays: [...PUBLISH_FALLBACK_RELAYS],
+        toOutbox: true,
+      },
+    );
+    if (!result.ok) {
+      showToast(result.error ?? 'Publish failed', 'error');
+      return;
+    }
+    publicationTracker.record(postFingerprint);
+    showToast('Posted to Nostr');
+  } finally {
+    isPublishing = false;
+    elements.publishButton.disabled = false;
+  }
+}
+
+function confirmDuplicatePost(): Promise<boolean> {
+  return new Promise((resolve) => {
+    elements.duplicatePostDialog.returnValue = 'cancel';
+    elements.duplicatePostDialog.addEventListener('close', () => {
+      resolve(elements.duplicatePostDialog.returnValue === 'post-again');
+    }, { once: true });
+    elements.duplicatePostDialog.showModal();
+  });
 }
 
 function renderBoxes(): void {

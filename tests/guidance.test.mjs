@@ -197,3 +197,27 @@ test('keeps the applet layout contract: no title header, frame-filling root', ()
   assert.doesNotMatch(css, /\bbody\s*\{[^}]*min-width/);
   assert.match(css, /html,\s*body,\s*#app\s*\{[^}]*height:\s*100%/);
 });
+
+test('places the retro phone format first and uses it for new drafts', () => {
+  const formats = sources.get('src/formats.ts');
+  const firstFormat = formats.match(/CARD_FORMATS[\s\S]*?=\s*\[\s*\{\s*id:\s*'([^']+)'/)?.[1];
+  assert.equal(firstFormat, 'pip-caller');
+  assert.match(sources.get('src/main.ts'), /formatId:\s*'pip-caller'/);
+});
+
+test('warns before reposting exact content in the same runtime', async () => {
+  const trackerSource = await readFile(join(root, 'src/publish-session.ts'), 'utf8');
+  const compiled = ts.transpileModule(trackerSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const module = { exports: {} };
+  runInNewContext(compiled, { module, exports: module.exports, Set });
+  const tracker = module.exports.createPublicationTracker();
+
+  assert.equal(tracker.has('same-card'), false);
+  tracker.record('same-card');
+  assert.equal(tracker.has('same-card'), true);
+  assert.equal(tracker.has('changed-card'), false);
+  assert.match(sources.get('index.html'), /This exact card was already posted during this session\./);
+  assert.match(sources.get('src/main.ts'), /publicationTracker\.has\(postFingerprint\)/);
+});
