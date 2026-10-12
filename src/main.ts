@@ -1,8 +1,10 @@
 import {
+  IDENTITY_DOMAIN,
   OUTBOX_DOMAIN,
   STORAGE_DOMAIN,
   THEME_DOMAIN,
   UPLOAD_DOMAIN,
+  identity,
   outbox,
   storage,
   themeGet,
@@ -12,6 +14,7 @@ import {
 } from '@napplet/sdk';
 import { cardAltText, installCardArtwork, renderCardImage } from './card-render.js';
 import { buildImetaTag, uploadCardImage } from './card-upload.js';
+import { deleteCardRecord, publishCardRecord, queryCardRecords } from './card-sync.js';
 import { runtimeHasDomain } from './domain-availability.js';
 import { CARD_FORMATS, getCardFormat, type FormatId } from './formats.js';
 import { createPublicationTracker } from './publish-session.js';
@@ -61,6 +64,8 @@ let lastSavedFingerprint: string | null = null;
 let draftTimer = 0;
 let toastTimer = 0;
 let themeSubscription: Subscription | null = null;
+let identitySubscription: Subscription | null = null;
+let selfPubkey = '';
 let isPublishing = false;
 const publicationTracker = createPublicationTracker();
 
@@ -170,9 +175,10 @@ function applyDraft(): void {
   elements.formatIcon.textContent = format.icon;
   elements.formatName.textContent = format.name;
   elements.characterCount.textContent = String(draft.body.length);
-  // Posting now needs both rails: the shell uploads the card image, then
-  // publishes the note that points at it.
-  elements.publishButton.hidden = !runtimeHasDomain(OUTBOX_DOMAIN) || !runtimeHasDomain(UPLOAD_DOMAIN);
+  // Post only needs outbox to be reachable; the upload rail is checked at
+  // publish time so a shell without NAP-UPLOAD still shows the button and
+  // explains itself instead of the button silently vanishing.
+  elements.publishButton.hidden = !runtimeHasDomain(OUTBOX_DOMAIN);
 }
 
 function syncDraft(): void {
@@ -229,8 +235,60 @@ async function saveCard(): Promise<void> {
   lastSavedFingerprint = currentFingerprint;
   await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
   await storage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
+  const savedCard = savedCards.find((card) => card.id === activeCardId);
+  if (savedCard) void syncSavedCard(savedCard);
   selectedDate = draft.date;
   switchView('home');
+}
+
+function canSyncCards(): boolean {
+  return runtimeHasDomain(OUTBOX_DOMAIN) && runtimeHasDomain(IDENTITY_DOMAIN);
+}
+
+async function refreshSelfPubkey(): Promise<string> {
+  if (!runtimeHasDomain(IDENTITY_DOMAIN)) return '';
+  try {
+    selfPubkey = await identity.getPublicKey();
+  } catch {
+    selfPubkey = '';
+  }
+  return selfPubkey;
+}
+
+/** Pull the account's saved cards off its relays and merge them into local state. */
+async function syncFromRelay(): Promise<void> {
+  if (!canSyncCards() || !selfPubkey) return;
+  try {
+    const remote = await queryCardRecords(selfPubkey);
+    const byId = new Map(savedCards.map((card) => [card.id, card]));
+    for (const card of remote) {
+      const existing = byId.get(card.id);
+      if (!existing || card.updatedAt > existing.updatedAt) byId.set(card.id, card);
+    }
+    savedCards = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
+    renderHome();
+  } catch {
+    // Local storage stays authoritative when the relay is unreachable.
+  }
+}
+
+async function syncSavedCard(card: SavedCard): Promise<void> {
+  if (!runtimeHasDomain(OUTBOX_DOMAIN)) return;
+  try {
+    await publishCardRecord(card);
+  } catch {
+    // Best effort: the card is already saved locally.
+  }
+}
+
+async function syncRemoveCard(id: string): Promise<void> {
+  if (!runtimeHasDomain(OUTBOX_DOMAIN) || !selfPubkey) return;
+  try {
+    await deleteCardRecord(id, selfPubkey);
+  } catch {
+    // Best effort: the card is already gone locally.
+  }
 }
 
 async function publishCard(): Promise<void> {
@@ -327,6 +385,7 @@ async function removeCard(id: string): Promise<void> {
   savedCards = savedCards.filter((card) => card.id !== id);
   if (activeCardId === id) { activeCardId = null; lastSavedFingerprint = null; }
   await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
+  void syncRemoveCard(id);
   renderBoxes();
   renderHome();
 }
@@ -388,7 +447,7 @@ function bindEvents(): void {
   elements.saveButton.addEventListener('click', () => void saveCard().catch(() => showToast('Save failed', 'error')));
   elements.publishButton.addEventListener('click', () => void publishCard().catch(() => showToast('Publish failed', 'error')));
   elements.searchInput.addEventListener('input', renderBoxes);
-  window.addEventListener('beforeunload', () => themeSubscription?.close());
+  window.addEventListener('beforeunload', () => { themeSubscription?.close(); identitySubscription?.close(); });
 }
 
 async function start(): Promise<void> {
@@ -405,6 +464,18 @@ async function start(): Promise<void> {
       draft = blankDraft();
     }
   }
+  if (runtimeHasDomain(IDENTITY_DOMAIN)) {
+    try {
+      await refreshSelfPubkey();
+      identitySubscription = identity.onChanged((pubkey) => {
+        selfPubkey = pubkey;
+        void syncFromRelay();
+      });
+    } catch {
+      identitySubscription = null;
+    }
+  }
+  await syncFromRelay();
   renderFormatShelf();
   applyDraft();
   renderHome();
