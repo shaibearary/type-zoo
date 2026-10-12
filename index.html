@@ -35,12 +35,12 @@
           </div>
         </header>
         <div class="editor-stage">
-          <article id="cardCanvas" class="card-canvas format-mallow-note">
-            <div class="format-decoration" aria-hidden="true"><span id="formatIcon">ʕ·ᴥ·ʔ</span></div>
+          <article id="cardCanvas" class="card-canvas format-pip-caller">
+            <div class="format-decoration" aria-hidden="true"><span id="formatIcon">☎</span></div>
             <label class="card-date"><span class="sr-only">Date</span><input id="dateInput" aria-label="Date" /></label>
             <label class="card-title"><span class="sr-only">Title</span><input id="titleInput" maxlength="80" aria-label="Title" placeholder="Add a title" /></label>
             <label class="card-body"><span class="sr-only">Your words</span><textarea id="bodyInput" maxlength="1200" aria-label="Your words" placeholder="Keep writing..."></textarea></label>
-            <footer><span id="formatName">Mallow Note</span><span id="characterCount">0</span></footer>
+            <footer><span id="formatName">Pip Caller</span><span id="characterCount">0</span></footer>
           </article>
         </div>
         <nav id="formatShelf" class="format-shelf" aria-label="Card formats"></nav>
@@ -56,6 +56,18 @@
         <div id="boxesGrid" class="boxes-grid"></div>
         <div id="emptyBoxes" class="empty-boxes"><span>( ·ᴗ· )</span><strong>Your boxes are empty.</strong></div>
       </section>
+
+      <dialog id="duplicatePostDialog" class="confirm-dialog" aria-labelledby="duplicatePostTitle">
+        <form method="dialog">
+          <span class="confirm-dialog-icon" aria-hidden="true">! !</span>
+          <strong id="duplicatePostTitle">Post this card again?</strong>
+          <p>This exact card was already posted during this session.</p>
+          <div class="confirm-dialog-actions">
+            <button type="submit" value="cancel">Cancel</button>
+            <button class="confirm-dialog-primary" type="submit" value="post-again">Post again</button>
+          </div>
+        </form>
+      </dialog>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
