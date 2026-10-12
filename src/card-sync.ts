@@ -96,3 +96,21 @@ export async function deleteCardRecord(id: string, selfPubkey: string): Promise<
   });
   return result.ok;
 }
+
+/** Public Blossom servers we feel safe suggesting when the user has none. */
+export const RECOMMENDED_BLOSSOM_SERVERS = ['https://blossom.band'] as const;
+
+/**
+ * Publish the user's Blossom server list (BUD-03, kind 10063). Shells that do
+ * BUD-03 discovery read this event to find where to upload, so a user who signs
+ * one never has to configure an image host by hand again.
+ */
+export async function publishBlossomServerList(servers: readonly string[]): Promise<boolean> {
+  const result = await outbox.publish({
+    kind: 10063,
+    content: '{}',
+    tags: servers.map((url) => ['server', url]),
+    created_at: Math.floor(Date.now() / 1000),
+  });
+  return result.ok;
+}

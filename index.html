@@ -32,6 +32,7 @@
           <div class="editor-actions">
             <button id="publishButton" class="publish-button" type="button">Post</button>
             <button id="saveButton" class="done-button" type="button">Save</button>
+            <button id="downloadButton" class="download-button" type="button" aria-label="Save card image" title="Save card image">⬇</button>
           </div>
         </header>
         <div class="editor-stage">
@@ -65,6 +66,31 @@
           <div class="confirm-dialog-actions">
             <button type="submit" value="cancel">Cancel</button>
             <button class="confirm-dialog-primary" type="submit" value="post-again">Post again</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="setupImageHostDialog" class="confirm-dialog" aria-labelledby="setupImageHostTitle">
+        <form method="dialog">
+          <span class="confirm-dialog-icon" aria-hidden="true">🖼</span>
+          <strong id="setupImageHostTitle">Set up image hosting</strong>
+          <p>No image host is configured for this account. Publish a Blossom server list so apps can upload your cards?</p>
+          <p class="confirm-dialog-detail">Recommended server: https://blossom.band</p>
+          <div class="confirm-dialog-actions">
+            <button type="submit" value="cancel">Not now</button>
+            <button class="confirm-dialog-primary" type="submit" value="publish">Publish server list</button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog id="imagePreviewDialog" class="image-preview-dialog" aria-labelledby="imagePreviewTitle">
+        <form method="dialog">
+          <strong id="imagePreviewTitle">Card image</strong>
+          <img id="imagePreviewImg" alt="Rendered card" />
+          <p>Right-click or long-press the image to save it.</p>
+          <div class="confirm-dialog-actions">
+            <button type="submit" value="close">Close</button>
+            <a id="imagePreviewDownload" class="confirm-dialog-primary" href="#" download="type-zoo-card.png">Download</a>
           </div>
         </form>
       </dialog>

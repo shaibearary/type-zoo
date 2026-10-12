@@ -1,8 +1,12 @@
-import { upload, type UploadResult } from '@napplet/sdk';
+import { UPLOAD_DOMAIN, upload, type UploadResult } from '@napplet/sdk';
+import { runtimeHasDomain } from './domain-availability.js';
 import type { CardSnapshot, RenderedCard } from './card-render.js';
 
 const UPLOAD_POLL_MS = 600;
 const UPLOAD_TIMEOUT_MS = 90_000;
+
+/** Where the shell stands for image upload, from the napplet's point of view. */
+export type UploadCapability = 'unavailable' | 'unconfigured' | 'ready';
 
 function isSettled(result: UploadResult): boolean {
   return result.status !== 'pending' && result.status !== 'uploading';
@@ -13,11 +17,41 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Ask the shell what upload rails it exposes, logging the answer to the console
+ * and reducing it to the three states the UI cares about:
+ * - `unavailable`: the shell does not even advertise the upload domain.
+ * - `unconfigured`: the domain is there but no rail/server is enabled.
+ * - `ready`: at least one rail is enabled.
+ */
+export async function checkUploadCapability(): Promise<UploadCapability> {
+  if (!runtimeHasDomain(UPLOAD_DOMAIN)) {
+    console.warn('[type-zoo] NAP-UPLOAD: shell does not advertise the "upload" domain; image publishing is unavailable.');
+    return 'unavailable';
+  }
+  try {
+    const info = await upload.info();
+    const rails = info?.rails ?? [];
+    console.info(`[type-zoo] NAP-UPLOAD rails: ${rails.length ? rails.map((rail) => `${rail.rail}${rail.enabled ? '' : ' (disabled)'}`).join(', ') : '(none disclosed)'}`);
+    if (info.maxBytes !== undefined) console.info(`[type-zoo] NAP-UPLOAD maxBytes: ${info.maxBytes}`);
+    if (info.mimeTypes?.length) console.info(`[type-zoo] NAP-UPLOAD mimeTypes: ${info.mimeTypes.join(', ')}`);
+    if (!rails.some((rail) => rail.enabled)) {
+      console.warn('[type-zoo] NAP-UPLOAD: no enabled rail — the shell has no image host configured.');
+      return 'unconfigured';
+    }
+    return 'ready';
+  } catch (error) {
+    console.warn('[type-zoo] NAP-UPLOAD: upload.info() rejected:', error);
+    return 'unconfigured';
+  }
+}
+
+/**
  * Hand the rendered card to the shell's upload rail. The shell picks the server,
  * signs the rail authorization (NIP-98 or Blossom), and returns a stable URL, so
  * the napplet never holds credentials or network authority of its own.
  */
 export async function uploadCardImage(card: RenderedCard, snapshot: CardSnapshot, alt: string): Promise<UploadResult> {
+  await checkUploadCapability();
   const result = await upload.upload({
     data: card.blob,
     mimeType: card.mimeType,

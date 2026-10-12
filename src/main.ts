@@ -3,7 +3,6 @@ import {
   OUTBOX_DOMAIN,
   STORAGE_DOMAIN,
   THEME_DOMAIN,
-  UPLOAD_DOMAIN,
   identity,
   outbox,
   storage,
@@ -13,8 +12,8 @@ import {
   type Theme,
 } from '@napplet/sdk';
 import { cardAltText, installCardArtwork, renderCardImage } from './card-render.js';
-import { buildImetaTag, uploadCardImage } from './card-upload.js';
-import { deleteCardRecord, publishCardRecord, queryCardRecords } from './card-sync.js';
+import { buildImetaTag, checkUploadCapability, uploadCardImage } from './card-upload.js';
+import { deleteCardRecord, publishBlossomServerList, publishCardRecord, queryCardRecords, RECOMMENDED_BLOSSOM_SERVERS } from './card-sync.js';
 import { runtimeHasDomain } from './domain-availability.js';
 import { CARD_FORMATS, getCardFormat, type FormatId } from './formats.js';
 import { createPublicationTracker } from './publish-session.js';
@@ -54,6 +53,11 @@ const elements = {
   boxesGrid: requireElement<HTMLElement>('#boxesGrid'),
   emptyBoxes: requireElement<HTMLElement>('#emptyBoxes'),
   duplicatePostDialog: requireElement<HTMLDialogElement>('#duplicatePostDialog'),
+  setupImageHostDialog: requireElement<HTMLDialogElement>('#setupImageHostDialog'),
+  downloadButton: requireElement<HTMLButtonElement>('#downloadButton'),
+  imagePreviewDialog: requireElement<HTMLDialogElement>('#imagePreviewDialog'),
+  imagePreviewImg: requireElement<HTMLImageElement>('#imagePreviewImg'),
+  imagePreviewDownload: requireElement<HTMLAnchorElement>('#imagePreviewDownload'),
 };
 
 let draft = blankDraft();
@@ -302,10 +306,7 @@ async function publishCard(): Promise<void> {
     showToast('Nostr publishing is unavailable', 'error');
     return;
   }
-  if (!runtimeHasDomain(UPLOAD_DOMAIN)) {
-    showToast('Image upload is unavailable', 'error');
-    return;
-  }
+  if (!await ensureUploadReady()) return;
   const postFingerprint = fingerprint(draft);
   if (publicationTracker.has(postFingerprint) && !await confirmDuplicatePost()) {
     showToast('Post cancelled');
@@ -324,6 +325,7 @@ async function publishCard(): Promise<void> {
     showProgress('Uploading the image');
     const uploaded = await uploadCardImage(card, snapshot, alt);
     if (!uploaded.ok || !uploaded.url) {
+      console.error('[type-zoo] NAP-UPLOAD: upload failed:', uploaded.error ?? 'unknown error');
       showToast(uploaded.error ?? 'Image upload failed', 'error');
       return;
     }
@@ -345,6 +347,7 @@ async function publishCard(): Promise<void> {
       toOutbox: false,
     });
     if (!result.ok) {
+      console.error('[type-zoo] outbox.publish failed:', result.error ?? 'unknown error');
       showToast(result.error ?? 'Publish failed', 'error');
       return;
     }
@@ -364,6 +367,88 @@ function confirmDuplicatePost(): Promise<boolean> {
     }, { once: true });
     elements.duplicatePostDialog.showModal();
   });
+}
+
+function confirmSetupImageHost(): Promise<boolean> {
+  return new Promise((resolve) => {
+    elements.setupImageHostDialog.returnValue = 'cancel';
+    elements.setupImageHostDialog.addEventListener('close', () => {
+      resolve(elements.setupImageHostDialog.returnValue === 'publish');
+    }, { once: true });
+    elements.setupImageHostDialog.showModal();
+  });
+}
+
+/**
+ * Make sure the shell can actually upload before we spend effort drawing the
+ * card. If the shell has no upload domain there is nothing the user can do here;
+ * if it has the domain but no server, walk the user through publishing a
+ * BUD-03 (kind 10063) server list so discovery-capable shells can find a host.
+ */
+async function ensureUploadReady(): Promise<boolean> {
+  const capability = await checkUploadCapability();
+  if (capability === 'ready') return true;
+  if (capability === 'unavailable') {
+    showToast('Image upload is unavailable', 'error');
+    return false;
+  }
+  if (!await confirmSetupImageHost()) {
+    showToast('Post cancelled');
+    return false;
+  }
+  showProgress('Publishing image host');
+  try {
+    const published = await publishBlossomServerList(RECOMMENDED_BLOSSOM_SERVERS);
+    if (!published) {
+      showToast('Failed to publish server list', 'error');
+      return false;
+    }
+  } catch (error) {
+    console.error('[type-zoo] publishBlossomServerList failed:', error);
+    showToast('Failed to publish server list', 'error');
+    return false;
+  }
+  if (await checkUploadCapability() !== 'ready') {
+    showToast('Published — but this host still has no image host. Reconnect your signer and try again.', 'error');
+    return false;
+  }
+  return true;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener('load', () => resolve(reader.result as string), { once: true });
+    reader.addEventListener('error', () => reject(reader.error), { once: true });
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Render the current card and hand it back as an image the user can save to
+ * disk. The sandbox forbids programmatic downloads, so the reliable path is the
+ * preview image (right-click / long-press); the Download link works on hosts
+ * that add `allow-downloads` to the napplet frame.
+ */
+async function saveCardImage(): Promise<void> {
+  syncDraft();
+  if (!draft.title.trim() && !draft.body.trim()) {
+    showToast('Write something first', 'error');
+    return;
+  }
+  showProgress('Rendering the card');
+  try {
+    const snapshot = { ...draft };
+    const card = await renderCardImage(snapshot);
+    const dataUrl = await blobToDataUrl(card.blob);
+    elements.imagePreviewImg.src = dataUrl;
+    elements.imagePreviewDownload.href = dataUrl;
+    elements.imagePreviewDownload.download = `type-zoo-${snapshot.date}-${snapshot.formatId}.png`;
+    elements.imagePreviewDialog.showModal();
+  } catch (error) {
+    console.error('[type-zoo] render card failed:', error);
+    showToast('Could not render the card', 'error');
+  }
 }
 
 function renderBoxes(): void {
@@ -445,7 +530,11 @@ function bindEvents(): void {
   elements.backButton.addEventListener('click', () => switchView('home'));
   elements.boxesBackButton.addEventListener('click', () => switchView('home'));
   elements.saveButton.addEventListener('click', () => void saveCard().catch(() => showToast('Save failed', 'error')));
-  elements.publishButton.addEventListener('click', () => void publishCard().catch(() => showToast('Publish failed', 'error')));
+  elements.downloadButton.addEventListener('click', () => void saveCardImage());
+  elements.publishButton.addEventListener('click', () => void publishCard().catch((error: unknown) => {
+    console.error('[type-zoo] publish failed:', error);
+    showToast('Publish failed', 'error');
+  }));
   elements.searchInput.addEventListener('input', renderBoxes);
   window.addEventListener('beforeunload', () => { themeSubscription?.close(); identitySubscription?.close(); });
 }
