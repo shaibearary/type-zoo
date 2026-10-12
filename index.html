@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Type Zoo</title>
+  </head>
+  <body>
+    <main id="app" class="app">
+      <section id="homeView" class="home-view">
+        <header class="home-header">
+          <button id="menuButton" class="plain-icon" type="button" aria-label="Open boxes">☰</button>
+          <div class="home-mark" aria-label="Type Zoo">tz</div>
+          <button id="boxesButton" class="plain-icon" type="button" aria-label="Open boxes">▢</button>
+        </header>
+        <div id="calendarStrip" class="calendar-strip" aria-label="Seven day calendar"></div>
+        <div class="timeline-shell">
+          <div id="timeline" class="timeline"></div>
+          <div id="emptyHome" class="empty-home">
+            <span aria-hidden="true">( ·ᴗ· )</span>
+            <strong>No notes yet</strong>
+            <p>Tap the pencil to keep a small moment.</p>
+          </div>
+        </div>
+        <button id="composeButton" class="compose-button" type="button" aria-label="Create a note">✎</button>
+      </section>
+
+      <section id="editorView" class="editor-view" hidden>
+        <header class="editor-header">
+          <button id="backButton" class="plain-icon" type="button" aria-label="Back to calendar">‹</button>
+          <div class="page-dots" aria-label="Format position"><span class="is-active"></span><span></span><span></span><span></span></div>
+          <div class="editor-actions">
+            <button id="publishButton" class="publish-button" type="button">Post</button>
+            <button id="saveButton" class="done-button" type="button">Done</button>
+          </div>
+        </header>
+        <div class="editor-stage">
+          <article id="cardCanvas" class="card-canvas format-mallow-note">
+            <div class="format-decoration" aria-hidden="true"><span id="formatIcon">ʕ·ᴥ·ʔ</span></div>
+            <label class="card-date"><span class="sr-only">Date</span><input id="dateInput" aria-label="Date" /></label>
+            <label class="card-title"><span class="sr-only">Title</span><input id="titleInput" maxlength="80" aria-label="Title" placeholder="Add a title" /></label>
+            <label class="card-body"><span class="sr-only">Your words</span><textarea id="bodyInput" maxlength="1200" aria-label="Your words" placeholder="Keep writing..."></textarea></label>
+            <footer><span id="formatName">Mallow Note</span><span id="characterCount">0</span></footer>
+          </article>
+        </div>
+        <nav id="formatShelf" class="format-shelf" aria-label="Card formats"></nav>
+        <output id="status" class="toast" aria-live="polite"></output>
+      </section>
+
+      <section id="boxesView" class="boxes-view" hidden>
+        <header class="boxes-header">
+          <button id="boxesBackButton" class="plain-icon" type="button" aria-label="Back to calendar">‹</button>
+          <strong>Boxes</strong>
+          <label class="search-field"><span class="sr-only">Search notes</span><input id="searchInput" type="search" placeholder="Search" /></label>
+        </header>
+        <div id="boxesGrid" class="boxes-grid"></div>
+        <div id="emptyBoxes" class="empty-boxes"><span>( ·ᴗ· )</span><strong>Your boxes are empty.</strong></div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

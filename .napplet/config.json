@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "sourceDir": ".",
+  "relays": [],
+  "blossomServers": [],
+  "defaultTarget": "named",
+  "named": [
+    "type-zoo"
+  ],
+  "discover": {
+    "enabled": true,
+    "roots": [
+      "."
+    ]
+  },
+  "signing": {
+    "mode": "interactive"
+  },
+  "conformance": {
+    "command": "napplet-conformance"
+  },
+  "paja": {
+    "command": "kehto"
+  },
+  "metadata": {
+    "name": "type-zoo",
+    "title": "Type Zoo",
+    "description": "Original animal editors turn small moments into beautiful typographic cards.",
+    "archetypes": []
+  }
+}
