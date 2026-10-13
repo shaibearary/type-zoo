@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "dev:shell": "kehto paja --target-url http://127.0.0.1:5173 --upload-mode blossom --upload-server https://blossom.band -- pnpm vite --host 127.0.0.1",
     "build": "vite build",
+    "postbuild": "node scripts/write-manifest-sidecar.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "type-check": "tsc --noEmit",
     "verify": "pnpm test:guidance && pnpm type-check && pnpm build",

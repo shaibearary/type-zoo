@@ -64,8 +64,8 @@
           <strong id="duplicatePostTitle">Post this card again?</strong>
           <p>This exact card was already posted during this session.</p>
           <div class="confirm-dialog-actions">
-            <button type="submit" value="cancel">Cancel</button>
-            <button class="confirm-dialog-primary" type="submit" value="post-again">Post again</button>
+            <button type="button" data-close="cancel">Cancel</button>
+            <button class="confirm-dialog-primary" type="button" data-close="post-again">Post again</button>
           </div>
         </form>
       </dialog>
@@ -77,8 +77,8 @@
           <p>No image host is configured for this account. Publish a Blossom server list so apps can upload your cards?</p>
           <p class="confirm-dialog-detail">Recommended server: https://blossom.band</p>
           <div class="confirm-dialog-actions">
-            <button type="submit" value="cancel">Not now</button>
-            <button class="confirm-dialog-primary" type="submit" value="publish">Publish server list</button>
+            <button type="button" data-close="cancel">Not now</button>
+            <button class="confirm-dialog-primary" type="button" data-close="publish">Publish server list</button>
           </div>
         </form>
       </dialog>
@@ -89,7 +89,7 @@
           <img id="imagePreviewImg" alt="Rendered card" />
           <p>Right-click or long-press the image to save it.</p>
           <div class="confirm-dialog-actions">
-            <button type="submit" value="close">Close</button>
+            <button type="button" data-close="close">Close</button>
             <a id="imagePreviewDownload" class="confirm-dialog-primary" href="#" download="type-zoo-card.png">Download</a>
           </div>
         </form>

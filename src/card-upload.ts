@@ -6,7 +6,7 @@ const UPLOAD_POLL_MS = 600;
 const UPLOAD_TIMEOUT_MS = 90_000;
 
 /** Where the shell stands for image upload, from the napplet's point of view. */
-export type UploadCapability = 'unavailable' | 'unconfigured' | 'ready';
+export type UploadCapability = 'unavailable' | 'unconfigured' | 'denied' | 'ready';
 
 function isSettled(result: UploadResult): boolean {
   return result.status !== 'pending' && result.status !== 'uploading';
@@ -41,6 +41,11 @@ export async function checkUploadCapability(): Promise<UploadCapability> {
     return 'ready';
   } catch (error) {
     console.warn('[type-zoo] NAP-UPLOAD: upload.info() rejected:', error);
+    // "policy denied" means the shell has the upload domain but this napplet
+    // was not granted it — a permission question, not a missing image host.
+    if (String(error).toLowerCase().includes('policy denied')) {
+      return 'denied';
+    }
     return 'unconfigured';
   }
 }

@@ -230,17 +230,24 @@ async function saveCard(): Promise<void> {
   const now = Date.now();
   if (activeCardId) {
     savedCards = savedCards.map((card) => card.id === activeCardId ? { ...card, ...draft, updatedAt: now } : card);
-    showToast('Changes saved');
   } else {
     activeCardId = `${now}-${Math.random().toString(16).slice(2)}`;
     savedCards = [{ ...draft, id: activeCardId, createdAt: now, updatedAt: now }, ...savedCards];
-    showToast('Saved');
   }
   lastSavedFingerprint = currentFingerprint;
-  await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
-  await storage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
-  const savedCard = savedCards.find((card) => card.id === activeCardId);
-  if (savedCard) void syncSavedCard(savedCard);
+  const savedCard = savedCards.find((card) => card.id === activeCardId)!;
+  // Save is a success if either rail lands: local storage or the relay record.
+  const [localOk, relayOk] = await Promise.all([storeCards(savedCards), syncSavedCard(savedCard)]);
+  await storeDraft(draft);
+  if (localOk && relayOk) {
+    showToast('Saved');
+  } else if (localOk) {
+    showToast('Saved on this device');
+  } else if (relayOk) {
+    showToast('Saved to your relays');
+  } else {
+    showToast('Could not save', 'error');
+  }
   selectedDate = draft.date;
   switchView('home');
 }
@@ -270,19 +277,20 @@ async function syncFromRelay(): Promise<void> {
       if (!existing || card.updatedAt > existing.updatedAt) byId.set(card.id, card);
     }
     savedCards = [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
-    await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
-    renderHome();
+    await storeCards(savedCards);
   } catch {
     // Local storage stays authoritative when the relay is unreachable.
   }
+  renderHome();
 }
 
-async function syncSavedCard(card: SavedCard): Promise<void> {
-  if (!runtimeHasDomain(OUTBOX_DOMAIN)) return;
+async function syncSavedCard(card: SavedCard): Promise<boolean> {
+  if (!runtimeHasDomain(OUTBOX_DOMAIN)) return false;
   try {
-    await publishCardRecord(card);
+    return await publishCardRecord(card);
   } catch {
     // Best effort: the card is already saved locally.
+    return false;
   }
 }
 
@@ -292,6 +300,30 @@ async function syncRemoveCard(id: string): Promise<void> {
     await deleteCardRecord(id, selfPubkey);
   } catch {
     // Best effort: the card is already gone locally.
+  }
+}
+
+/** Persist the saved-cards list locally without throwing; false when storage is missing or the write failed. */
+async function storeCards(cards: SavedCard[]): Promise<boolean> {
+  if (!runtimeHasDomain(STORAGE_DOMAIN)) return false;
+  try {
+    await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
+    return true;
+  } catch (error) {
+    console.warn('[type-zoo] local card save failed:', error);
+    return false;
+  }
+}
+
+/** Persist the draft locally without throwing; false when storage is missing or the write failed. */
+async function storeDraft(draftValue: Draft): Promise<boolean> {
+  if (!runtimeHasDomain(STORAGE_DOMAIN)) return false;
+  try {
+    await storage.setItem(STORAGE_KEYS.draft, JSON.stringify(draftValue));
+    return true;
+  } catch (error) {
+    console.warn('[type-zoo] local draft save failed:', error);
+    return false;
   }
 }
 
@@ -392,6 +424,13 @@ async function ensureUploadReady(): Promise<boolean> {
     showToast('Image upload is unavailable', 'error');
     return false;
   }
+  if (capability === 'denied') {
+    // The shell has the upload rail but has not granted this napplet the
+    // capability. That is a permission the user turns on in the shell, not an
+    // image-host setting, so there is no server list to publish.
+    showToast('Image upload is not granted to this app. Enable it in the shell.', 'error');
+    return false;
+  }
   if (!await confirmSetupImageHost()) {
     showToast('Post cancelled');
     return false;
@@ -469,7 +508,7 @@ function renderBoxes(): void {
 async function removeCard(id: string): Promise<void> {
   savedCards = savedCards.filter((card) => card.id !== id);
   if (activeCardId === id) { activeCardId = null; lastSavedFingerprint = null; }
-  await storage.setItem(STORAGE_KEYS.cards, JSON.stringify(savedCards));
+  await storeCards(savedCards);
   void syncRemoveCard(id);
   renderBoxes();
   renderHome();
@@ -483,7 +522,7 @@ function escapeHtml(value: string): string {
 
 function queueDraftSave(): void {
   window.clearTimeout(draftTimer);
-  draftTimer = window.setTimeout(() => void storage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft)), 300);
+  draftTimer = window.setTimeout(() => void storeDraft(draft), 300);
 }
 
 function parseDraft(value: unknown): Draft | null {
@@ -536,6 +575,15 @@ function bindEvents(): void {
     showToast('Publish failed', 'error');
   }));
   elements.searchInput.addEventListener('input', renderBoxes);
+  // Dialog confirm buttons. Shells sandbox the frame with `allow-scripts` and
+  // no `allow-forms`, so a `<form method="dialog">` submit is blocked and the
+  // buttons appear dead. Close the dialog with JS instead, which sets
+  // returnValue exactly as the form submit would.
+  document.querySelectorAll<HTMLDialogElement>('dialog').forEach((dialog) => {
+    dialog.querySelectorAll<HTMLButtonElement>('button[data-close]').forEach((button) => {
+      button.addEventListener('click', () => dialog.close(button.dataset.close ?? 'cancel'));
+    });
+  });
   window.addEventListener('beforeunload', () => { themeSubscription?.close(); identitySubscription?.close(); });
 }
 

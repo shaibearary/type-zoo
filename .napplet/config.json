@@ -1,8 +1,16 @@
 {
   "version": 1,
   "sourceDir": ".",
-  "relays": [],
-  "blossomServers": [],
+  "relays": [
+    "wss://relay.damus.io",
+    "wss://nos.lol"
+  ],
+  "blossomServers": [
+    "https://cdn.hzrd149.com",
+    "https://blossom.primal.net",
+    "https://nostr.download",
+    "https://files.sovbit.host"
+  ],
   "defaultTarget": "named",
   "named": [
     "type-zoo"
@@ -14,7 +22,14 @@
     ]
   },
   "signing": {
-    "mode": "interactive"
+    "mode": "interactive",
+    "keyReference": "cc8d072efdcc676fcbac14f6cd6825edc3576e55eb786a2a975ee034a6a026cb",
+    "pubkey": "cc8d072efdcc676fcbac14f6cd6825edc3576e55eb786a2a975ee034a6a026cb",
+    "relays": [
+      "wss://relay.primal.net/",
+      "wss://theforest.nostr1.com/",
+      "wss://nostr.oxtr.dev/"
+    ]
   },
   "conformance": {
     "command": "napplet-conformance"
@@ -27,5 +42,6 @@
     "title": "Type Zoo",
     "description": "Original animal editors turn small moments into beautiful typographic cards.",
     "archetypes": []
-  }
+  },
+  "bunkerPubkey": "cc8d072efdcc676fcbac14f6cd6825edc3576e55eb786a2a975ee034a6a026cb"
 }

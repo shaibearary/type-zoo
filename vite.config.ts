@@ -20,7 +20,7 @@ export default defineConfig({
     nip5aManifest({
       nappletType: 'type-zoo',
       artifactMode: 'single-file',
-      requires: ['storage'],
+      requires: ['outbox', 'upload'],
     }),
   ],
 });
